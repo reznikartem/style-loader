@@ -1,6 +1,9 @@
-const isOldIE = (function isOldIE() {
-  let memo;
+"use strict";
 
+var stylesInDom = {};
+
+var isOldIE = function isOldIE() {
+  var memo;
   return function memorize() {
     if (typeof memo === 'undefined') {
       // Test for IE <= 9 as proposed by Browserhacks
@@ -13,20 +16,15 @@ const isOldIE = (function isOldIE() {
 
     return memo;
   };
-})();
+}();
 
-const getTarget = (function getTarget() {
-  const memo = {};
-
+var getTarget = function getTarget() {
+  var memo = {};
   return function memorize(target) {
     if (typeof memo[target] === 'undefined') {
-      let styleTarget = document.querySelector(target);
+      var styleTarget = document.querySelector(target); // Special case to return head of iframe instead of iframe itself
 
-      // Special case to return head of iframe instead of iframe itself
-      if (
-        window.HTMLIFrameElement &&
-        styleTarget instanceof window.HTMLIFrameElement
-      ) {
+      if (window.HTMLIFrameElement && styleTarget instanceof window.HTMLIFrameElement) {
         try {
           // This will throw an exception if access to iframe is blocked
           // due to cross-origin restrictions
@@ -42,85 +40,91 @@ const getTarget = (function getTarget() {
 
     return memo[target];
   };
-})();
+}();
 
-const stylesInDom = [];
+function listToStyles(list, options) {
+  var styles = [];
+  var newStyles = {};
 
-function getIndexByIdentifier(identifier) {
-  let result = -1;
-
-  for (let i = 0; i < stylesInDom.length; i++) {
-    if (stylesInDom[i].identifier === identifier) {
-      result = i;
-      break;
-    }
-  }
-
-  return result;
-}
-
-function modulesToDom(list, options) {
-  const idCountMap = {};
-  const identifiers = [];
-
-  for (let i = 0; i < list.length; i++) {
-    const item = list[i];
-    const id = options.base ? item[0] + options.base : item[0];
-    const count = idCountMap[id] || 0;
-    const identifier = `${id} ${count}`;
-
-    idCountMap[id] = count + 1;
-
-    const index = getIndexByIdentifier(identifier);
-    const obj = {
-      css: item[1],
-      media: item[2],
-      sourceMap: item[3],
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i];
+    var id = options.base ? item[0] + options.base : item[0];
+    var css = item[1];
+    var media = item[2];
+    var sourceMap = item[3];
+    var part = {
+      css: css,
+      media: media,
+      sourceMap: sourceMap
     };
 
-    if (index !== -1) {
-      stylesInDom[index].references++;
-      stylesInDom[index].updater(obj);
-    } else {
-      stylesInDom.push({
-        identifier,
-        updater: addStyle(obj, options),
-        references: 1,
+    if (!newStyles[id]) {
+      styles.push(newStyles[id] = {
+        id: id,
+        parts: [part]
       });
+    } else {
+      newStyles[id].parts.push(part);
     }
-
-    identifiers.push(identifier);
   }
 
-  return identifiers;
+  return styles;
+}
+
+function addStylesToDom(styles, options) {
+  for (var i = 0; i < styles.length; i++) {
+    var item = styles[i];
+    var domStyle = stylesInDom[item.id];
+    var j = 0;
+
+    if (domStyle) {
+      domStyle.refs++;
+
+      for (; j < domStyle.parts.length; j++) {
+        domStyle.parts[j](item.parts[j]);
+      }
+
+      for (; j < item.parts.length; j++) {
+        domStyle.parts.push(addStyle(item.parts[j], options));
+      }
+    } else {
+      var parts = [];
+
+      for (; j < item.parts.length; j++) {
+        parts.push(addStyle(item.parts[j], options));
+      }
+
+      stylesInDom[item.id] = {
+        id: item.id,
+        refs: 1,
+        parts: parts
+      };
+    }
+  }
 }
 
 function insertStyleElement(options) {
-  const style = document.createElement('style');
-  const attributes = options.attributes || {};
+  var style = document.createElement('style');
 
-  if (typeof attributes.nonce === 'undefined') {
-    const nonce =
-      typeof __webpack_nonce__ !== 'undefined' ? __webpack_nonce__ : null;
+  if (typeof options.attributes.nonce === 'undefined') {
+    var nonce = typeof __webpack_nonce__ !== 'undefined' ? __webpack_nonce__ : null;
 
     if (nonce) {
-      attributes.nonce = nonce;
+      options.attributes.nonce = nonce;
     }
   }
 
-  Object.keys(attributes).forEach((key) => {
-    style.setAttribute(key, attributes[key]);
+  Object.keys(options.attributes).forEach(function (key) {
+    style.setAttribute(key, options.attributes[key]);
   });
 
   if (typeof options.insert === 'function') {
     options.insert(style);
   } else {
-    const target = getTarget(options.insert || 'head');
+    var target = getTarget(options.insert || 'head');
 
     if (!target) {
-      throw new Error(
-        "Couldn't find a style target. This probably means that the value for the 'insert' parameter is invalid."
-      );
+      throw new Error("Couldn't find a style target. This probably means that the value for the 'insert' parameter is invalid.");
     }
 
     target.appendChild(style);
@@ -137,32 +141,27 @@ function removeStyleElement(style) {
 
   style.parentNode.removeChild(style);
 }
-
 /* istanbul ignore next  */
-const replaceText = (function replaceText() {
-  const textStore = [];
 
+
+var replaceText = function replaceText() {
+  var textStore = [];
   return function replace(index, replacement) {
     textStore[index] = replacement;
-
     return textStore.filter(Boolean).join('\n');
   };
-})();
+}();
 
 function applyToSingletonTag(style, index, remove, obj) {
-  const css = remove
-    ? ''
-    : obj.media
-    ? `@media ${obj.media} {${obj.css}}`
-    : obj.css;
+  var css = remove ? '' : obj.css; // For old IE
 
-  // For old IE
   /* istanbul ignore if  */
+
   if (style.styleSheet) {
     style.styleSheet.cssText = replaceText(index, css);
   } else {
-    const cssNode = document.createTextNode(css);
-    const childNodes = style.childNodes;
+    var cssNode = document.createTextNode(css);
+    var childNodes = style.childNodes;
 
     if (childNodes[index]) {
       style.removeChild(childNodes[index]);
@@ -177,24 +176,21 @@ function applyToSingletonTag(style, index, remove, obj) {
 }
 
 function applyToTag(style, options, obj) {
-  let css = obj.css;
-  const media = obj.media;
-  const sourceMap = obj.sourceMap;
+  var css = obj.css;
+  var media = obj.media;
+  var sourceMap = obj.sourceMap;
 
   if (media) {
     style.setAttribute('media', media);
-  } else {
-    style.removeAttribute('media');
   }
 
   if (sourceMap && btoa) {
-    css += `\n/*# sourceMappingURL=data:application/json;base64,${btoa(
-      unescape(encodeURIComponent(JSON.stringify(sourceMap)))
-    )} */`;
-  }
+    css += "\n/*# sourceMappingURL=data:application/json;base64,".concat(btoa(unescape(encodeURIComponent(JSON.stringify(sourceMap)))), " */");
+  } // For old IE
 
-  // For old IE
   /* istanbul ignore if  */
+
+
   if (style.styleSheet) {
     style.styleSheet.cssText = css;
   } else {
@@ -206,88 +202,81 @@ function applyToTag(style, options, obj) {
   }
 }
 
-let singleton = null;
-let singletonCounter = 0;
+var singleton = null;
+var singletonCounter = 0;
 
 function addStyle(obj, options) {
-  let style;
-  let update;
-  let remove;
+  var style;
+  var update;
+  var remove;
 
   if (options.singleton) {
-    const styleIndex = singletonCounter++;
-
+    var styleIndex = singletonCounter++;
     style = singleton || (singleton = insertStyleElement(options));
-
-    update = applyToSingletonTag.bind(null, style, styleIndex, false);
-    remove = applyToSingletonTag.bind(null, style, styleIndex, true);
+    update = function(obj) { applyToSingletonTag(style, styleIndex, false, obj); };
+    remove = function() { applyToSingletonTag(style, styleIndex, true); };
   } else {
     style = insertStyleElement(options);
+    update = function() { applyToTag(style, options); };
 
-    update = applyToTag.bind(null, style, options);
-    remove = () => {
+    remove = function remove() {
       removeStyleElement(style);
     };
   }
 
   update(obj);
-
   return function updateStyle(newObj) {
     if (newObj) {
-      if (
-        newObj.css === obj.css &&
-        newObj.media === obj.media &&
-        newObj.sourceMap === obj.sourceMap
-      ) {
+      if (newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap) {
         return;
       }
 
-      update((obj = newObj));
+      update(obj = newObj);
     } else {
       remove();
     }
   };
 }
 
-module.exports = (list, options) => {
+module.exports = function (list, options) {
   options = options || {};
-
-  // Force single-tag solution on IE6-9, which has a hard limit on the # of <style>
+  options.attributes = typeof options.attributes === 'object' ? options.attributes : {}; // Force single-tag solution on IE6-9, which has a hard limit on the # of <style>
   // tags it will allow on a page
+
   if (!options.singleton && typeof options.singleton !== 'boolean') {
     options.singleton = isOldIE();
   }
 
-  list = list || [];
-
-  let lastIdentifiers = modulesToDom(list, options);
-
+  var styles = listToStyles(list, options);
+  addStylesToDom(styles, options);
   return function update(newList) {
-    newList = newList || [];
+    var mayRemove = [];
 
-    if (Object.prototype.toString.call(newList) !== '[object Array]') {
-      return;
-    }
+    for (var i = 0; i < styles.length; i++) {
+      var item = styles[i];
+      var domStyle = stylesInDom[item.id];
 
-    for (let i = 0; i < lastIdentifiers.length; i++) {
-      const identifier = lastIdentifiers[i];
-      const index = getIndexByIdentifier(identifier);
-
-      stylesInDom[index].references--;
-    }
-
-    const newLastIdentifiers = modulesToDom(newList, options);
-
-    for (let i = 0; i < lastIdentifiers.length; i++) {
-      const identifier = lastIdentifiers[i];
-      const index = getIndexByIdentifier(identifier);
-
-      if (stylesInDom[index].references === 0) {
-        stylesInDom[index].updater();
-        stylesInDom.splice(index, 1);
+      if (domStyle) {
+        domStyle.refs--;
+        mayRemove.push(domStyle);
       }
     }
 
-    lastIdentifiers = newLastIdentifiers;
+    if (newList) {
+      var newStyles = listToStyles(newList, options);
+      addStylesToDom(newStyles, options);
+    }
+
+    for (var _i = 0; _i < mayRemove.length; _i++) {
+      var _domStyle = mayRemove[_i];
+
+      if (_domStyle.refs === 0) {
+        for (var j = 0; j < _domStyle.parts.length; j++) {
+          _domStyle.parts[j]();
+        }
+
+        delete stylesInDom[_domStyle.id];
+      }
+    }
   };
 };
